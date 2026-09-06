@@ -96,6 +96,9 @@ export function ExcelImportWizard({ onImportComplete }: { onImportComplete?: (co
     const result = processMappedRows(rawHeaders, rawRows, columnMapping, {
       baseStartDate: startDate,
     });
+    if (result.rows.length > 0 && result.rows[0]?.mapped?.scheduledDate) {
+      setStartDate(result.rows[0].mapped.scheduledDate);
+    }
     setParseResult(result);
     setStep("preview");
   };
@@ -446,9 +449,9 @@ export function ExcelImportWizard({ onImportComplete }: { onImportComplete?: (co
 
             {/* RAW TABLE VIEW */}
             {previewTab === "table" && (
-              <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-gray-200 dark:border-gray-800 rounded-xl">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300 font-semibold">
+                  <thead className="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300 font-semibold sticky top-0 z-10 backdrop-blur-xs">
                     <tr>
                       <th className="p-3">#</th>
                       <th className="p-3">Day</th>
@@ -462,7 +465,7 @@ export function ExcelImportWizard({ onImportComplete }: { onImportComplete?: (co
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {parseResult.rows.slice(0, 25).map((row) => (
+                    {parseResult.rows.map((row) => (
                       <tr key={row.rowNumber} className={row.isValid ? "" : "bg-red-50/30 dark:bg-red-950/20"}>
                         <td className="p-3 font-mono text-gray-400">{row.rowNumber}</td>
                         <td className="p-3 font-bold text-blue-600">{row.mapped.dayLabel}</td>

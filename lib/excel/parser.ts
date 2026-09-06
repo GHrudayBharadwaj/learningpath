@@ -73,14 +73,14 @@ export function parseExcelBuffer(buffer: ArrayBuffer | Buffer): { headers: strin
   return { headers, rawData: rows };
 }
 
-export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex: number = 0): { date: string; dayNumber: number } {
+export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex: number = 0): { date: string; dayNumber?: number } {
   if (!rawVal && rawVal !== 0) {
     const calculatedDate = addDays(baseDate, rowIndex);
     return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: rowIndex + 1 };
   }
 
   if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
-    return { date: format(rawVal, "yyyy-MM-dd"), dayNumber: 1 };
+    return { date: format(rawVal, "yyyy-MM-dd") };
   }
 
   // Check if rawVal is an Excel numeric date (e.g. 45000)
@@ -88,7 +88,7 @@ export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex
     try {
       const parsedDate = new Date((rawVal - (25567 + 2)) * 86400 * 1000);
       if (isValid(parsedDate)) {
-        return { date: format(parsedDate, "yyyy-MM-dd"), dayNumber: 1 };
+        return { date: format(parsedDate, "yyyy-MM-dd") };
       }
     } catch {
       // Continue
@@ -101,10 +101,9 @@ export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex
     return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: rowIndex + 1 };
   }
 
-  // Case: "Day 1", "Day 01", "Day-2", "D1", "Day 1 - Intro", "Week 1 Day 2", "1", "2", "3"
-  const dayMatch = str.match(/(?:week\s*(\d+)\s*)?day\s*[-_:]?\s*(\d+)/i) ||
-                   str.match(/^d(\d+)$/i) ||
-                   str.match(/^(\d+)$/);
+  // Case: "Day 1", "Day 01", "Day-2", "D1", "Day 1 - Intro", "Week 1 Day 2"
+  const dayMatch = str.match(/^(?:week\s*(\d+)\s*)?day\s*[-_:]?\s*(\d+)/i) ||
+                   str.match(/^d(\d+)$/i);
 
   if (dayMatch) {
     let dayNum = 1;
@@ -115,6 +114,15 @@ export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex
     } else if (dayMatch[1]) {
       dayNum = parseInt(dayMatch[1], 10);
     }
+    if (dayNum > 0 && dayNum < 10000) {
+      const calculatedDate = addDays(baseDate, dayNum - 1);
+      return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: dayNum };
+    }
+  }
+
+  // Pure day number (1 to 999) when user provides just day index
+  if (/^\d{1,3}$/.test(str)) {
+    const dayNum = parseInt(str, 10);
     if (dayNum > 0 && dayNum < 1000) {
       const calculatedDate = addDays(baseDate, dayNum - 1);
       return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: dayNum };
@@ -123,7 +131,7 @@ export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex
 
   // Standard YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return { date: str, dayNumber: 1 };
+    return { date: str };
   }
 
   const formats = [
@@ -131,14 +139,15 @@ export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex
     "dd-MM-yyyy", "MM-dd-yyyy", "dd.MM.yyyy",
     "d/M/yyyy", "M/d/yyyy", "yyyy-M-d",
     "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy",
-    "yyyy.MM.dd", "d-MMM-yyyy", "d-MMM-yy"
+    "yyyy.MM.dd", "d-MMM-yyyy", "d-MMM-yy",
+    "dd-MMM-yyyy", "dd-MMM-yy"
   ];
 
   for (const fmt of formats) {
     try {
       const parsed = parse(str, fmt, new Date());
       if (isValid(parsed) && parsed.getFullYear() > 2000 && parsed.getFullYear() < 2100) {
-        return { date: format(parsed, "yyyy-MM-dd"), dayNumber: 1 };
+        return { date: format(parsed, "yyyy-MM-dd") };
       }
     } catch {
       // Continue
@@ -284,6 +293,15 @@ export function processMappedRows(
   // Sort rows chronologically
   parsedRows.sort((a, b) => a.mapped.scheduledDate.localeCompare(b.mapped.scheduledDate));
 
+  // Determine earliest date
+  const earliestDateStr = parsedRows[0]?.mapped.scheduledDate || baseDateStr;
+  let earliestDate: Date;
+  try {
+    earliestDate = parseISO(earliestDateStr);
+  } catch {
+    earliestDate = validBaseDate;
+  }
+
   let computedDayIndex = 1;
   const dateToDayIndex = new Map<string, number>();
 
@@ -292,7 +310,23 @@ export function processMappedRows(
     if (!dateToDayIndex.has(d)) {
       dateToDayIndex.set(d, computedDayIndex++);
     }
-    const actualDayNumber = row.mapped.dayNumber && row.mapped.dayNumber > 0 ? row.mapped.dayNumber : dateToDayIndex.get(d)!;
+
+    // Determine actual day number
+    let actualDayNumber = row.mapped.dayNumber;
+    if (!actualDayNumber || actualDayNumber <= 0) {
+      try {
+        const rowDate = parseISO(d);
+        if (isValid(rowDate) && isValid(earliestDate)) {
+          const dayOffset = Math.round((rowDate.getTime() - earliestDate.getTime()) / (1000 * 60 * 60 * 24));
+          actualDayNumber = dayOffset >= 0 ? dayOffset + 1 : dateToDayIndex.get(d)!;
+        } else {
+          actualDayNumber = dateToDayIndex.get(d)!;
+        }
+      } catch {
+        actualDayNumber = dateToDayIndex.get(d)!;
+      }
+    }
+
     const label = `Day ${actualDayNumber}`;
     row.mapped.dayNumber = actualDayNumber;
     row.mapped.dayLabel = label;
