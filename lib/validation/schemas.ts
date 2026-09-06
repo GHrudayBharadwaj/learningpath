@@ -42,6 +42,7 @@ export const generateNotesSchema = z.object({
   taskId: z.string().optional(),
   topic: z.string().min(1, "Topic is required"),
   subject: z.string().min(1, "Subject is required"),
+  subtopic: z.string().optional(),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).default("intermediate"),
   length: z.enum(["short", "medium", "detailed"]).default("medium"),
   purpose: z.enum(["exam", "interview", "coding", "competitive_programming", "revision"]).default("exam"),

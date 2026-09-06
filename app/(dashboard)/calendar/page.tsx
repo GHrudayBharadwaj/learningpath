@@ -38,7 +38,7 @@ export default function CalendarPage() {
   };
 
   const handleGenerateNotes = (task: any) => {
-    window.location.href = `/notes?topic=${encodeURIComponent(task.topic)}&subject=${encodeURIComponent(task.subject)}&taskId=${task.id}&action=generate`;
+    window.location.href = `/notes?topic=${encodeURIComponent(task.topic)}&subject=${encodeURIComponent(task.subject)}${task.subtopic ? `&subtopic=${encodeURIComponent(task.subtopic)}` : ""}&taskId=${task.id}&action=generate`;
   };
 
   return (

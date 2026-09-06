@@ -21,6 +21,7 @@ export async function POST(req: Request) {
       taskId,
       topic,
       subject,
+      subtopic,
       difficulty,
       length,
       purpose,
@@ -36,7 +37,8 @@ export async function POST(req: Request) {
     let sourcesUsedList: Array<{ title: string; type: string; url?: string; snippet?: string }> = [];
 
     if (includeSources) {
-      const retrieved = await retrieveRelevantChunks(user.id, `${subject} ${topic}`, 4, specificSourceIds);
+      const searchTarget = subtopic ? `${subject} ${topic} ${subtopic}` : `${subject} ${topic}`;
+      const retrieved = await retrieveRelevantChunks(user.id, searchTarget, 4, specificSourceIds);
       contextChunks = retrieved.map(r => ({
         title: r.sourceTitle,
         content: r.content,
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
     const promptParams = {
       topic,
       subject,
+      subtopic,
       difficulty,
       length,
       purpose,
@@ -89,6 +92,7 @@ export async function POST(req: Request) {
       structuredData: {
         topic,
         subject,
+        subtopic,
         generatedAt: new Date().toISOString(),
         fallbackUsed: aiResult.fallbackUsed,
         thinkingProcess: aiResult.thinkingProcess,

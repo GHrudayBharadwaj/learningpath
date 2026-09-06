@@ -457,7 +457,7 @@ export default function PlansPage() {
                           </div>
 
                           <div className="flex items-center space-x-1.5 self-end sm:self-center">
-                            <Link href={`/notes?topic=${encodeURIComponent(task.topic)}&subject=${encodeURIComponent(task.subject)}&taskId=${task.id}&action=generate`}>
+                            <Link href={`/notes?topic=${encodeURIComponent(task.topic)}&subject=${encodeURIComponent(task.subject)}${task.subtopic ? `&subtopic=${encodeURIComponent(task.subtopic)}` : ""}&taskId=${task.id}&action=generate`}>
                               <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Generate AI Notes">
                                 <Sparkles className="h-3.5 w-3.5 mr-1" />
                                 <span>Notes</span>
@@ -557,7 +557,7 @@ export default function PlansPage() {
                             </Badge>
                           </td>
                           <td className="p-4 text-right whitespace-nowrap space-x-1">
-                            <Link href={`/notes?topic=${encodeURIComponent(t.topic)}&subject=${encodeURIComponent(t.subject)}&taskId=${t.id}&action=generate`}>
+                            <Link href={`/notes?topic=${encodeURIComponent(t.topic)}&subject=${encodeURIComponent(t.subject)}${t.subtopic ? `&subtopic=${encodeURIComponent(t.subtopic)}` : ""}&taskId=${t.id}&action=generate`}>
                               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Generate AI Notes">
                                 <Sparkles className="h-3.5 w-3.5" />
                               </Button>

@@ -1,6 +1,7 @@
 export interface PromptParams {
   topic: string;
   subject: string;
+  subtopic?: string;
   difficulty?: "beginner" | "intermediate" | "advanced";
   length?: "short" | "medium" | "detailed";
   purpose?: "exam" | "interview" | "coding" | "competitive_programming" | "revision";
@@ -20,7 +21,7 @@ Always follow these core guidelines:
 }
 
 export function buildUserPrompt(params: PromptParams): string {
-  const { topic, subject, difficulty = "intermediate", length = "medium", purpose = "exam", noteType = "standard", language = "English", contextChunks = [] } = params;
+  const { topic, subject, subtopic, difficulty = "intermediate", length = "medium", purpose = "exam", noteType = "standard", language = "English", contextChunks = [] } = params;
 
   let contextBlock = "";
   if (contextChunks && contextChunks.length > 0) {
@@ -28,11 +29,13 @@ export function buildUserPrompt(params: PromptParams): string {
       contextChunks.map((c, i) => `[Source ${i + 1}: ${c.title} (${c.sourceType})]\n${c.content}\n`).join("\n");
   }
 
+  const subtopicLine = subtopic && subtopic.trim() ? `Subtopic / Specific Focus: ${subtopic.trim()}\n` : "";
+
   if (noteType === "exam_2mark" || noteType === "exam_5mark" || noteType === "exam_10mark") {
     return `Generate University Exam Notes for:
 Subject: ${subject}
 Topic: ${topic}
-Target Exam Note Type: ${noteType.toUpperCase().replace("_", " ")}
+${subtopicLine}Target Exam Note Type: ${noteType.toUpperCase().replace("_", " ")}
 Language: ${language}
 ${contextBlock}
 
@@ -46,7 +49,7 @@ Requirements:
     return `Generate a Complete Coding Practice & Interview Preparation Guide for:
 Subject: ${subject}
 Topic: ${topic}
-Difficulty: ${difficulty}
+${subtopicLine}Difficulty: ${difficulty}
 Language: ${language}
 ${contextBlock}
 
@@ -64,7 +67,7 @@ Please structure the guide as follows:
   return `Generate Comprehensive Study Notes for:
 Subject: ${subject}
 Topic: ${topic}
-Difficulty Level: ${difficulty}
+${subtopicLine}Difficulty Level: ${difficulty}
 Note Length: ${length}
 Primary Purpose: ${purpose}
 Language: ${language}

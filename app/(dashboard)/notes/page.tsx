@@ -28,6 +28,7 @@ function NotesContent() {
   const searchParams = useSearchParams();
   const initialTopic = searchParams.get("topic") || "";
   const initialSubject = searchParams.get("subject") || "";
+  const initialSubtopic = searchParams.get("subtopic") || "";
   const initialTaskId = searchParams.get("taskId") || "";
   const initialAction = searchParams.get("action") || "";
 
@@ -47,6 +48,7 @@ function NotesContent() {
   const [genForm, setGenForm] = useState<{
     topic: string;
     subject: string;
+    subtopic: string;
     difficulty: "beginner" | "intermediate" | "advanced";
     length: "short" | "medium" | "detailed";
     purpose: "exam" | "interview" | "coding" | "revision";
@@ -58,6 +60,7 @@ function NotesContent() {
   }>({
     topic: initialTopic || "Dynamic Programming & Optimization",
     subject: initialSubject || "Data Structures & Algorithms",
+    subtopic: initialSubtopic || "",
     difficulty: "intermediate",
     length: "detailed",
     purpose: "exam",
@@ -319,14 +322,14 @@ function NotesContent() {
         maxWidth="max-w-xl"
       >
         <form onSubmit={handleGenerate} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">Subject *</label>
               <Input
                 required
                 value={genForm.subject}
                 onChange={(e) => setGenForm({ ...genForm, subject: e.target.value })}
-                placeholder="e.g. Operating Systems, Chemistry"
+                placeholder="e.g. Python Foundation, Operating Systems"
               />
             </div>
             <div>
@@ -335,9 +338,20 @@ function NotesContent() {
                 required
                 value={genForm.topic}
                 onChange={(e) => setGenForm({ ...genForm, topic: e.target.value })}
-                placeholder="e.g. Deadlock Detection & Prevention"
+                placeholder="e.g. Python, Deadlock Prevention"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+              Subtopic / Specific Focus <span className="text-gray-400 font-normal text-[11px]">(Optional)</span>
+            </label>
+            <Input
+              value={genForm.subtopic}
+              onChange={(e) => setGenForm({ ...genForm, subtopic: e.target.value })}
+              placeholder="e.g. Variables, Loops, Conditionals, Memory Management"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
