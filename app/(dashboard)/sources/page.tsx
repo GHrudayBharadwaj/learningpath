@@ -24,6 +24,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
 import { Dialog, Tabs } from "@/components/ui/dialog";
+import { extractTextFromPdfArrayBuffer } from "@/lib/documents/pdf";
 
 export default function SourcesPage() {
   const [sources, setSources] = useState<any[]>([]);
@@ -118,23 +119,58 @@ export default function SourcesPage() {
         failedFiles: [...failed],
       });
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("subject", fileSubject || "General");
-      formData.append("topic", fileTopic || "");
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      let res: Response;
 
       try {
-        const res = await fetch("/api/sources/upload", {
-          method: "POST",
-          body: formData,
-        });
+        if (file.size > 3.5 * 1024 * 1024 || ext === "pdf" || ext === "txt" || ext === "md") {
+          // Direct extracted text payload (JSON is < 300KB even for huge books, completely bypassing the 4.5MB serverless limit)
+          let extractedText = "";
+          let fileType = "txt";
+
+          if (ext === "pdf") {
+            fileType = "pdf";
+            const arrayBuffer = await file.arrayBuffer();
+            const { text } = extractTextFromPdfArrayBuffer(arrayBuffer);
+            extractedText = text;
+          } else if (ext === "txt" || ext === "md") {
+            fileType = "txt";
+            extractedText = await file.text();
+          } else {
+            fileType = ext;
+            extractedText = `Document: ${file.name}`;
+          }
+
+          res = await fetch("/api/sources/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileSize: file.size,
+              fileType,
+              extractedText,
+              subject: fileSubject || "General",
+              topic: fileTopic || "",
+            }),
+          });
+        } else {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("subject", fileSubject || "General");
+          formData.append("topic", fileTopic || "");
+
+          res = await fetch("/api/sources/upload", {
+            method: "POST",
+            body: formData,
+          });
+        }
 
         let data: any = {};
         try {
           const text = await res.text();
           data = text ? JSON.parse(text) : {};
         } catch {
-          if (!res.ok) throw new Error(`HTTP ${res.status}: Upload failed (Payload limit or timeout).`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}: Upload failed.`);
         }
 
         if (!res.ok) {
