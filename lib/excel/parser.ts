@@ -1,6 +1,8 @@
 import * as XLSX from "xlsx";
 import { format, parse, isValid } from "date-fns";
 
+import { addDays, parseISO } from "date-fns";
+
 export interface ParsedRow {
   rowNumber: number;
   data: Record<string, any>;
@@ -10,6 +12,8 @@ export interface ParsedRow {
     topic: string;
     subtopic?: string;
     scheduledDate: string;
+    dayNumber?: number;
+    dayLabel?: string;
     startTime?: string;
     endTime?: string;
     durationMinutes: number;
@@ -29,6 +33,16 @@ export interface ParseResult {
   rawRowsCount: number;
   validRowsCount: number;
   invalidRowsCount: number;
+  totalDays: number;
+  totalHours: number;
+  dayGroups: Array<{
+    dayNumber: number;
+    date: string;
+    dayLabel: string;
+    tasksCount: number;
+    totalDurationMinutes: number;
+    tasks: ParsedRow[];
+  }>;
   rows: ParsedRow[];
 }
 
@@ -59,39 +73,80 @@ export function parseExcelBuffer(buffer: ArrayBuffer | Buffer): { headers: strin
   return { headers, rawData: rows };
 }
 
-function normalizeDate(rawVal: any): string | null {
-  if (!rawVal) return null;
+export function normalizeDate(rawVal: any, baseDate: Date = new Date(), rowIndex: number = 0): { date: string; dayNumber: number } {
+  if (!rawVal && rawVal !== 0) {
+    const calculatedDate = addDays(baseDate, rowIndex);
+    return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: rowIndex + 1 };
+  }
 
   if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
-    return format(rawVal, "yyyy-MM-dd");
+    return { date: format(rawVal, "yyyy-MM-dd"), dayNumber: 1 };
   }
 
-  const str = String(rawVal).trim();
-  if (!str) return null;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return str;
-  }
-
-  const formats = [
-    "dd/MM/yyyy", "MM/dd/yyyy", "yyyy/MM/dd",
-    "dd-MM-yyyy", "MM-dd-yyyy", "dd.MM.yyyy",
-    "d/M/yyyy", "M/d/yyyy", "yyyy-M-d",
-    "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy"
-  ];
-
-  for (const fmt of formats) {
+  // Check if rawVal is an Excel numeric date (e.g. 45000)
+  if (typeof rawVal === "number" && rawVal > 1000 && rawVal < 100000) {
     try {
-      const parsed = parse(str, fmt, new Date());
-      if (isValid(parsed) && parsed.getFullYear() > 2000 && parsed.getFullYear() < 2100) {
-        return format(parsed, "yyyy-MM-dd");
+      const parsedDate = new Date((rawVal - (25567 + 2)) * 86400 * 1000);
+      if (isValid(parsedDate)) {
+        return { date: format(parsedDate, "yyyy-MM-dd"), dayNumber: 1 };
       }
     } catch {
       // Continue
     }
   }
 
-  return format(new Date(), "yyyy-MM-dd");
+  const str = String(rawVal).trim();
+  if (!str) {
+    const calculatedDate = addDays(baseDate, rowIndex);
+    return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: rowIndex + 1 };
+  }
+
+  // Case: "Day 1", "Day 01", "Day-2", "D1", "Day 1 - Intro", "Week 1 Day 2", "1", "2", "3"
+  const dayMatch = str.match(/(?:week\s*(\d+)\s*)?day\s*[-_:]?\s*(\d+)/i) ||
+                   str.match(/^d(\d+)$/i) ||
+                   str.match(/^(\d+)$/);
+
+  if (dayMatch) {
+    let dayNum = 1;
+    if (dayMatch[2]) {
+      const weekNum = dayMatch[1] ? parseInt(dayMatch[1], 10) : 1;
+      const dayInWeek = parseInt(dayMatch[2], 10);
+      dayNum = (weekNum - 1) * 7 + dayInWeek;
+    } else if (dayMatch[1]) {
+      dayNum = parseInt(dayMatch[1], 10);
+    }
+    if (dayNum > 0 && dayNum < 1000) {
+      const calculatedDate = addDays(baseDate, dayNum - 1);
+      return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: dayNum };
+    }
+  }
+
+  // Standard YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return { date: str, dayNumber: 1 };
+  }
+
+  const formats = [
+    "dd/MM/yyyy", "MM/dd/yyyy", "yyyy/MM/dd",
+    "dd-MM-yyyy", "MM-dd-yyyy", "dd.MM.yyyy",
+    "d/M/yyyy", "M/d/yyyy", "yyyy-M-d",
+    "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy",
+    "yyyy.MM.dd", "d-MMM-yyyy", "d-MMM-yy"
+  ];
+
+  for (const fmt of formats) {
+    try {
+      const parsed = parse(str, fmt, new Date());
+      if (isValid(parsed) && parsed.getFullYear() > 2000 && parsed.getFullYear() < 2100) {
+        return { date: format(parsed, "yyyy-MM-dd"), dayNumber: 1 };
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  const calculatedDate = addDays(baseDate, rowIndex);
+  return { date: format(calculatedDate, "yyyy-MM-dd"), dayNumber: rowIndex + 1 };
 }
 
 function normalizePriority(val: any): "low" | "medium" | "high" | "urgent" {
@@ -125,8 +180,19 @@ export function processMappedRows(
   headers: string[],
   rows: any[][],
   mapping: Record<string, string>,
-  existingTaskSignatures: Set<string> = new Set()
+  options?: { baseStartDate?: string; existingTaskSignatures?: Set<string> } | Set<string>
 ): ParseResult {
+  const existingTaskSignatures = options instanceof Set 
+    ? options 
+    : (options?.existingTaskSignatures || new Set<string>());
+
+  const baseDateStr = (!(options instanceof Set) && options?.baseStartDate) 
+    ? options.baseStartDate 
+    : format(new Date(), "yyyy-MM-dd");
+
+  const baseDate = new Date(baseDateStr);
+  const validBaseDate = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+
   const headerIndexMap: Record<string, number> = {};
   headers.forEach((h, idx) => {
     headerIndexMap[h] = idx;
@@ -150,15 +216,16 @@ export function processMappedRows(
     const rawTopic = String(getVal("topic") || "").trim();
     const rawSubject = String(getVal("subject") || "").trim();
     const rawDate = getVal("scheduledDate");
-    const formattedDate = normalizeDate(rawDate);
+    const dateResult = normalizeDate(rawDate, validBaseDate, rowIndex);
+    const scheduledDate = dateResult.date;
+    const dayNumber = dateResult.dayNumber;
 
     if (!rawTopic) errors.push("Topic is required");
     if (!rawSubject) errors.push("Subject is required");
-    if (!formattedDate) errors.push("Valid study date is required");
+    if (!scheduledDate) errors.push("Valid study date is required");
 
     const topic = rawTopic || "Untitled Topic";
     const subject = rawSubject || "General";
-    const scheduledDate = formattedDate || format(new Date(), "yyyy-MM-dd");
     const subtopic = String(getVal("subtopic") || "").trim() || undefined;
     const title = String(getVal("title") || "").trim() || `${subject}: ${topic}`;
     const startTime = String(getVal("startTime") || "").trim() || undefined;
@@ -169,6 +236,7 @@ export function processMappedRows(
     const practicePlatform = String(getVal("practicePlatform") || "").trim() || undefined;
     const practiceUrl = String(getVal("practiceUrl") || "").trim() || undefined;
     const notesSummary = String(getVal("notesSummary") || "").trim() || undefined;
+    const dayLabel = `Day ${dayNumber}`;
 
     const signature = `${scheduledDate}|${subject.toLowerCase()}|${topic.toLowerCase()}`;
     const isDuplicate = seenSignatures.has(signature) || existingTaskSignatures.has(signature);
@@ -183,6 +251,8 @@ export function processMappedRows(
         topic,
         subtopic,
         scheduledDate,
+        dayNumber,
+        dayLabel,
         startTime,
         endTime,
         durationMinutes,
@@ -201,11 +271,61 @@ export function processMappedRows(
   const validRowsCount = parsedRows.filter(r => r.isValid).length;
   const invalidRowsCount = parsedRows.filter(r => !r.isValid).length;
 
+  // Group by Date / DayNumber
+  const dayGroupMap = new Map<string, {
+    dayNumber: number;
+    date: string;
+    dayLabel: string;
+    tasksCount: number;
+    totalDurationMinutes: number;
+    tasks: ParsedRow[];
+  }>();
+
+  // Sort rows chronologically
+  parsedRows.sort((a, b) => a.mapped.scheduledDate.localeCompare(b.mapped.scheduledDate));
+
+  let computedDayIndex = 1;
+  const dateToDayIndex = new Map<string, number>();
+
+  parsedRows.forEach((row) => {
+    const d = row.mapped.scheduledDate;
+    if (!dateToDayIndex.has(d)) {
+      dateToDayIndex.set(d, computedDayIndex++);
+    }
+    const actualDayNumber = row.mapped.dayNumber && row.mapped.dayNumber > 0 ? row.mapped.dayNumber : dateToDayIndex.get(d)!;
+    const label = `Day ${actualDayNumber}`;
+    row.mapped.dayNumber = actualDayNumber;
+    row.mapped.dayLabel = label;
+
+    if (!dayGroupMap.has(d)) {
+      dayGroupMap.set(d, {
+        dayNumber: actualDayNumber,
+        date: d,
+        dayLabel: label,
+        tasksCount: 0,
+        totalDurationMinutes: 0,
+        tasks: [],
+      });
+    }
+
+    const group = dayGroupMap.get(d)!;
+    group.tasksCount += 1;
+    group.totalDurationMinutes += row.mapped.durationMinutes;
+    group.tasks.push(row);
+  });
+
+  const dayGroups = Array.from(dayGroupMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const totalMinutes = parsedRows.reduce((acc, r) => acc + (r.mapped.durationMinutes || 0), 0);
+  const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
+
   return {
     headers,
     rawRowsCount: parsedRows.length,
     validRowsCount,
     invalidRowsCount,
+    totalDays: dayGroups.length,
+    totalHours,
+    dayGroups,
     rows: parsedRows,
   };
 }

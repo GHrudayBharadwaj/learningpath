@@ -20,21 +20,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TaskModal } from "@/components/plans/TaskModal";
+import { StudyPlanModal } from "@/components/plans/StudyPlanModal";
 
 export default function DashboardPage() {
+  const [plans, setPlans] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
   const todayStr = new Date().toISOString().split("T")[0];
 
   const fetchData = async () => {
     try {
-      const [tasksRes, progressRes] = await Promise.all([
+      const [tasksRes, progressRes, plansRes] = await Promise.all([
         fetch(`/api/tasks`),
         fetch(`/api/progress`),
+        fetch(`/api/plans`),
       ]);
 
       if (tasksRes.ok) {
@@ -45,6 +49,11 @@ export default function DashboardPage() {
       if (progressRes.ok) {
         const pData = await progressRes.json();
         setSummary(pData.summary);
+      }
+
+      if (plansRes.ok) {
+        const plData = await plansRes.json();
+        setPlans(plData.plans || []);
       }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
@@ -91,9 +100,22 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-2.5 flex-wrap">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsPlanModalOpen(true)}
+            className="h-9 text-xs font-semibold bg-white text-gray-900 hover:bg-gray-100 shadow-md"
+          >
+            <Layers className="h-3.5 w-3.5 mr-1.5 text-blue-600" />
+            <span>New Plan</span>
+          </Button>
           <Link href="/plans/import">
-            <Button variant="secondary" size="sm" className="h-9 text-xs font-semibold bg-white text-gray-900 hover:bg-gray-100 shadow-md">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs font-semibold bg-white/10 hover:bg-white/20 border-white/20 text-white"
+            >
               <Upload className="h-3.5 w-3.5 mr-1.5" />
               <span>Import Excel</span>
             </Button>
@@ -327,6 +349,12 @@ export default function DashboardPage() {
         isOpen={isTaskModalOpen}
         onClose={() => setIsTaskModalOpen(false)}
         task={selectedTask}
+        onSaved={fetchData}
+      />
+
+      <StudyPlanModal
+        isOpen={isPlanModalOpen}
+        onClose={() => setIsPlanModalOpen(false)}
         onSaved={fetchData}
       />
     </div>
