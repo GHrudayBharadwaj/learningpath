@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
+import { signIn } from "next-auth/react";
+
 export default function SignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -25,7 +27,7 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
       });
 
       const data = await res.json();
@@ -33,7 +35,19 @@ export default function SignupPage() {
         throw new Error(data.error || "Failed to create account.");
       }
 
-      router.push("/dashboard");
+      // Automatically sign in the user
+      const loginRes = await signIn("credentials", {
+        email: email.trim(),
+        password: password,
+        redirect: false,
+      });
+
+      if (loginRes?.error) {
+        router.push("/login?registered=true");
+      } else {
+        router.push("/dashboard");
+        router.refresh();
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

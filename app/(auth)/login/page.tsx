@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
+import { signIn } from "next-auth/react";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("demo@studyplanner.ai");
@@ -21,15 +23,18 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // In development / demo environment, allow instant signin
-      const res = await fetch("/api/auth/callback/credentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ email, password }),
+      const result = await signIn("credentials", {
+        email: email.trim(),
+        password: password,
+        redirect: false,
       });
 
-      // Redirect directly to dashboard
-      router.push("/dashboard");
+      if (result?.error) {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        router.push("/dashboard");
+        router.refresh();
+      }
     } catch (err: any) {
       setError(err.message || "Failed to log in.");
     } finally {
