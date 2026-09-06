@@ -15,6 +15,9 @@ import {
   Sparkles,
   RefreshCw,
   AlertCircle,
+  X,
+  Files,
+  File as FileIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -31,7 +34,8 @@ export default function SourcesPage() {
   const [selectedSource, setSelectedSource] = useState<any>(null);
 
   // Form states
-  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [fileSubject, setFileSubject] = useState("");
   const [fileTopic, setFileTopic] = useState("");
   const [webUrl, setWebUrl] = useState("");
@@ -55,17 +59,41 @@ export default function SourcesPage() {
     fetchSources();
   }, []);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selected = Array.from(e.target.files);
+      setFilesToUpload(prev => [...prev, ...selected]);
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setFilesToUpload(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files) {
+      const dropped = Array.from(e.dataTransfer.files).filter(f =>
+        /\.(pdf|docx|doc|txt|md)$/i.test(f.name)
+      );
+      setFilesToUpload(prev => [...prev, ...dropped]);
+    }
+  };
+
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileToUpload) return;
+    if (filesToUpload.length === 0) return;
 
     setIsSubmitting(true);
     setStatusFeedback(null);
 
     const formData = new FormData();
-    formData.append("file", fileToUpload);
+    filesToUpload.forEach(f => {
+      formData.append("files", f);
+    });
     formData.append("subject", fileSubject || "General");
-    formData.append("topic", fileTopic || fileToUpload.name);
+    formData.append("topic", fileTopic || "");
 
     try {
       const res = await fetch("/api/sources/upload", {
@@ -73,13 +101,15 @@ export default function SourcesPage() {
         body: formData,
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to process and upload document.");
+        throw new Error(data.error || "Failed to process and upload documents.");
       }
 
       setIsUploadModalOpen(false);
-      setFileToUpload(null);
+      setFilesToUpload([]);
+      setFileSubject("");
+      setFileTopic("");
       fetchSources();
     } catch (err: any) {
       setStatusFeedback(err.message);
@@ -275,47 +305,123 @@ export default function SourcesPage() {
         )}
       </div>
 
-      {/* Upload Document Modal */}
+      {/* Upload Document Modal (Multi-File) */}
       <Dialog
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        title="Upload Study Document"
-        description="Upload textbooks, syllabus PDFs, or DOCX reference files."
+        title="Upload Study Documents (Multi-File)"
+        description="Upload multiple textbooks, lecture slides, syllabus PDFs, or DOCX reference files."
+        maxWidth="max-w-xl"
       >
         <form onSubmit={handleFileUpload} className="space-y-4 text-xs">
           {statusFeedback && (
-            <div className="p-3 bg-red-50 text-red-700 rounded-lg text-xs flex items-center space-x-2">
-              <AlertCircle className="h-4 w-4" />
+            <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 rounded-xl text-xs flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{statusFeedback}</span>
             </div>
           )}
 
-          <div>
-            <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">Select File (PDF, DOCX, TXT) *</label>
+          {/* Drag & Drop Zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer ${
+              isDragging
+                ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/30"
+                : "border-gray-300 dark:border-gray-700 hover:border-blue-400 bg-gray-50/50 dark:bg-gray-900/40"
+            }`}
+            onClick={() => document.getElementById("multi-file-input")?.click()}
+          >
+            <Upload className="h-8 w-8 text-blue-500 mx-auto mb-2" />
+            <p className="font-semibold text-gray-800 dark:text-gray-200 text-xs">
+              Click to browse or drag & drop multiple files here
+            </p>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Supports <strong>PDF, DOCX, DOC, TXT, MD</strong> (Up to 25MB each)
+            </p>
             <input
+              id="multi-file-input"
               type="file"
-              required
+              multiple
               accept=".pdf,.docx,.doc,.txt,.md"
-              onChange={(e) => setFileToUpload(e.target.files?.[0] || null)}
-              className="w-full text-xs file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              onChange={handleFileSelect}
+              className="hidden"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Selected Files List */}
+          {filesToUpload.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-gray-700 dark:text-gray-300 flex items-center space-x-1.5">
+                  <Files className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Selected Documents ({filesToUpload.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFilesToUpload([])}
+                  className="text-red-600 hover:underline text-[11px]"
+                >
+                  Clear all
+                </button>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                {filesToUpload.map((f, idx) => {
+                  const sizeMB = (f.size / (1024 * 1024)).toFixed(2);
+                  const ext = f.name.split(".").pop()?.toUpperCase();
+                  return (
+                    <div
+                      key={`${f.name}-${idx}`}
+                      className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <Badge variant="secondary" className="text-[10px] font-mono shrink-0">
+                          {ext}
+                        </Badge>
+                        <span className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">
+                          {f.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400 shrink-0">({sizeMB} MB)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile(idx);
+                        }}
+                        className="text-gray-400 hover:text-red-600 p-1 shrink-0"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Subject & Topic Batch Metadata */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">Subject</label>
+              <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                Subject Category <span className="text-gray-400 font-normal text-[10px]">(Optional)</span>
+              </label>
               <Input
                 value={fileSubject}
                 onChange={(e) => setFileSubject(e.target.value)}
-                placeholder="e.g. Physics, Java"
+                placeholder="e.g. Computer Science, Java"
               />
             </div>
             <div>
-              <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">Topic</label>
+              <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                Topic / Domain <span className="text-gray-400 font-normal text-[10px]">(Optional)</span>
+              </label>
               <Input
                 value={fileTopic}
                 onChange={(e) => setFileTopic(e.target.value)}
-                placeholder="e.g. Quantum Mechanics"
+                placeholder="e.g. Data Structures, Algorithms"
               />
             </div>
           </div>
@@ -324,8 +430,23 @@ export default function SourcesPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => setIsUploadModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={isSubmitting || !fileToUpload}>
-              {isSubmitting ? "Uploading & Chunking..." : "Upload & Process"}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isSubmitting || filesToUpload.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <span>Processing {filesToUpload.length} Document(s)...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  <span>Upload & Index {filesToUpload.length > 0 ? `(${filesToUpload.length} Files)` : ""}</span>
+                </>
+              )}
             </Button>
           </div>
         </form>

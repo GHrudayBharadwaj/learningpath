@@ -12,75 +12,115 @@ export async function POST(req: Request) {
     if (!user || !user.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const subject = (formData.get("subject") as string) || "General";
-    const topic = (formData.get("topic") as string) || "";
+    
+    // Support both single ("file") and multiple ("files") file uploads
+    const files: File[] = [];
+    const filesList = formData.getAll("files") as File[];
+    if (filesList.length > 0) {
+      files.push(...filesList);
+    }
+    const singleFile = formData.get("file") as File | null;
+    if (singleFile && !files.includes(singleFile)) {
+      files.push(singleFile);
+    }
+
+    if (files.length === 0) {
+      return NextResponse.json({ error: "No files provided for upload." }, { status: 400 });
+    }
+
+    const defaultSubject = (formData.get("subject") as string) || "General";
+    const defaultTopic = (formData.get("topic") as string) || "";
     const customTitle = (formData.get("title") as string) || "";
 
-    if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    const uploadedSources: any[] = [];
+    const errors: string[] = [];
+
+    for (const file of files) {
+      try {
+        if (!file || typeof file.size !== "number") continue;
+
+        // Size limit: 25MB per file
+        if (file.size > 25 * 1024 * 1024) {
+          errors.push(`"${file.name}" exceeds 25MB limit.`);
+          continue;
+        }
+
+        const fileName = file.name;
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+
+        let extractedText = "";
+        let fileType = "txt";
+
+        if (ext === "pdf") {
+          fileType = "pdf";
+          const { text } = await extractTextFromPdf(buffer);
+          extractedText = text;
+        } else if (ext === "docx" || ext === "doc") {
+          fileType = "docx";
+          const { text } = await extractTextFromDocx(buffer);
+          extractedText = text;
+        } else if (ext === "txt" || ext === "md") {
+          fileType = "txt";
+          extractedText = buffer.toString("utf-8");
+        } else {
+          errors.push(`"${file.name}": Unsupported format (${ext}). Please upload PDF, DOCX, TXT, or MD.`);
+          continue;
+        }
+
+        // Upload file to Vercel Blob
+        const blobResult = await uploadFileToBlob(buffer, fileName, file.type || "application/octet-stream");
+
+        // Clean document name as title
+        const cleanDocTitle = customTitle && files.length === 1
+          ? customTitle
+          : fileName.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
+
+        const source = await repo.createSource({
+          userId: user.id,
+          title: cleanDocTitle || fileName,
+          sourceType: fileType,
+          fileSize: file.size,
+          sourceUrl: blobResult.url,
+          extractedContent: extractedText,
+          metadata: { originalName: fileName, blobUrl: blobResult.url },
+          subject: defaultSubject,
+          topic: defaultTopic || cleanDocTitle,
+        });
+
+        // Chunk text for RAG retrieval
+        const chunks = chunkText(extractedText, 800, 100, { title: cleanDocTitle, fileName, fileType });
+        if (chunks.length > 0) {
+          await repo.createChunks(chunks.map(c => ({
+            sourceId: source.id,
+            userId: user.id as string,
+            chunkIndex: c.chunkIndex,
+            content: c.content,
+            metadata: c.metadata,
+          })));
+        }
+
+        uploadedSources.push({
+          source,
+          fileName,
+          chunkCount: chunks.length,
+          extractedLength: extractedText.length,
+        });
+      } catch (err: any) {
+        errors.push(`Failed to process "${file.name}": ${err.message}`);
+      }
     }
 
-    // Size limit: 20MB
-    if (file.size > 20 * 1024 * 1024) {
-      return NextResponse.json({ error: "File exceeds maximum permitted size of 20MB" }, { status: 400 });
-    }
-
-    const fileName = file.name;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ext = fileName.split(".").pop()?.toLowerCase();
-
-    let extractedText = "";
-    let fileType = "txt";
-
-    if (ext === "pdf") {
-      fileType = "pdf";
-      const { text } = await extractTextFromPdf(buffer);
-      extractedText = text;
-    } else if (ext === "docx" || ext === "doc") {
-      fileType = "docx";
-      const { text } = await extractTextFromDocx(buffer);
-      extractedText = text;
-    } else if (ext === "txt" || ext === "md") {
-      fileType = "txt";
-      extractedText = buffer.toString("utf-8");
-    } else {
-      return NextResponse.json({ error: "Unsupported file type. Please upload PDF, DOCX, or TXT." }, { status: 400 });
-    }
-
-    // Store in Vercel Blob
-    const blobResult = await uploadFileToBlob(buffer, fileName, file.type || "application/octet-stream");
-
-    const title = customTitle || fileName;
-    const source = await repo.createSource({
-      userId: user.id,
-      title,
-      sourceType: fileType,
-      fileSize: file.size,
-      sourceUrl: blobResult.url,
-      extractedContent: extractedText,
-      metadata: { originalName: fileName, blobUrl: blobResult.url },
-      subject,
-      topic: topic || title,
-    });
-
-    // Chunk text for RAG retrieval
-    const chunks = chunkText(extractedText, 800, 100, { title, fileName, fileType });
-    if (chunks.length > 0) {
-      await repo.createChunks(chunks.map(c => ({
-        sourceId: source.id,
-        userId: user.id as string,
-        chunkIndex: c.chunkIndex,
-        content: c.content,
-        metadata: c.metadata,
-      })));
+    if (uploadedSources.length === 0 && errors.length > 0) {
+      return NextResponse.json({ error: errors.join(" | ") }, { status: 400 });
     }
 
     return NextResponse.json({
-      source,
-      blobUrl: blobResult.url,
-      chunkCount: chunks.length,
-      extractedLength: extractedText.length,
+      success: true,
+      createdCount: uploadedSources.length,
+      sources: uploadedSources.map(u => u.source),
+      details: uploadedSources,
+      errors: errors.length > 0 ? errors : undefined,
     }, { status: 201 });
   } catch (err: any) {
     console.error("Upload error:", err);
