@@ -29,6 +29,8 @@ import { Tabs } from "@/components/ui/dialog";
 import { TaskModal } from "@/components/plans/TaskModal";
 import { StudyPlanModal } from "@/components/plans/StudyPlanModal";
 import { DeletePlanModal } from "@/components/plans/DeletePlanModal";
+import { AiStudyPlanModal } from "@/components/plans/AiStudyPlanModal";
+import { AiPlanCleanupModal } from "@/components/plans/AiPlanCleanupModal";
 
 export default function PlansPage() {
   const [plans, setPlans] = useState<any[]>([]);
@@ -45,6 +47,11 @@ export default function PlansPage() {
   const [selectedPlanForEdit, setSelectedPlanForEdit] = useState<any>(null);
   const [isDeletePlanModalOpen, setIsDeletePlanModalOpen] = useState(false);
   const [selectedPlanForDelete, setSelectedPlanForDelete] = useState<any>(null);
+  
+  // AI Plan modals state
+  const [isAiPlanModalOpen, setIsAiPlanModalOpen] = useState(false);
+  const [isAiCleanupModalOpen, setIsAiCleanupModalOpen] = useState(false);
+  const [selectedPlanForAiCleanup, setSelectedPlanForAiCleanup] = useState<any>(null);
   
   const [isLoading, setIsLoading] = useState(true);
 
@@ -186,10 +193,14 @@ export default function PlansPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2.5 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleExportCSV} className="text-xs">
-            <Download className="h-3.5 w-3.5 mr-1.5" />
-            <span>Export CSV</span>
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+          <Button
+            size="sm"
+            onClick={() => setIsAiPlanModalOpen(true)}
+            className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md"
+          >
+            <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+            <span>AI Plan Generator</span>
           </Button>
           <Button
             variant="outline"
@@ -198,7 +209,7 @@ export default function PlansPage() {
             className="text-xs"
           >
             <Plus className="h-3.5 w-3.5 mr-1.5" />
-            <span>New Study Plan</span>
+            <span>New Plan</span>
           </Button>
           <Link href="/plans/import">
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
@@ -209,6 +220,10 @@ export default function PlansPage() {
           <Button size="sm" onClick={() => { setSelectedTask(null); setIsTaskModalOpen(true); }} className="text-xs">
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             <span>Add Task</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportCSV} className="text-xs">
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            <span>Export CSV</span>
           </Button>
         </div>
       </div>
@@ -254,6 +269,19 @@ export default function PlansPage() {
                     </div>
 
                     <div className="flex items-center space-x-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlanForAiCleanup(plan);
+                          setIsAiCleanupModalOpen(true);
+                        }}
+                        className="h-7 w-7 p-0 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+                        title="AI Cleanup & Deletion Options"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -589,6 +617,20 @@ export default function PlansPage() {
           }
           fetchData();
         }}
+      />
+
+      <AiStudyPlanModal
+        isOpen={isAiPlanModalOpen}
+        onClose={() => setIsAiPlanModalOpen(false)}
+        onPlanCreated={fetchData}
+      />
+
+      <AiPlanCleanupModal
+        isOpen={isAiCleanupModalOpen}
+        onClose={() => setIsAiCleanupModalOpen(false)}
+        plan={selectedPlanForAiCleanup}
+        tasks={tasks}
+        onActionComplete={fetchData}
       />
     </div>
   );

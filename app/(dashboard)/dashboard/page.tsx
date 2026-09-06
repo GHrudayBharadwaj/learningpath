@@ -21,6 +21,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { TaskModal } from "@/components/plans/TaskModal";
 import { StudyPlanModal } from "@/components/plans/StudyPlanModal";
+import { AiStudyPlanModal } from "@/components/plans/AiStudyPlanModal";
 
 export default function DashboardPage() {
   const [plans, setPlans] = useState<any[]>([]);
@@ -30,6 +31,7 @@ export default function DashboardPage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [isAiPlanModalOpen, setIsAiPlanModalOpen] = useState(false);
 
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -100,14 +102,22 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2.5 flex-wrap">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
           <Button
-            variant="secondary"
+            size="sm"
+            onClick={() => setIsAiPlanModalOpen(true)}
+            className="h-9 text-xs font-semibold bg-white text-purple-700 hover:bg-gray-100 shadow-md"
+          >
+            <Sparkles className="h-3.5 w-3.5 mr-1.5 text-purple-600" />
+            <span>AI Plan Generator</span>
+          </Button>
+          <Button
+            variant="outline"
             size="sm"
             onClick={() => setIsPlanModalOpen(true)}
-            className="h-9 text-xs font-semibold bg-white text-gray-900 hover:bg-gray-100 shadow-md"
+            className="h-9 text-xs font-semibold bg-white/10 hover:bg-white/20 border-white/20 text-white"
           >
-            <Layers className="h-3.5 w-3.5 mr-1.5 text-blue-600" />
+            <Layers className="h-3.5 w-3.5 mr-1.5" />
             <span>New Plan</span>
           </Button>
           <Link href="/plans/import">
@@ -356,6 +366,12 @@ export default function DashboardPage() {
         isOpen={isPlanModalOpen}
         onClose={() => setIsPlanModalOpen(false)}
         onSaved={fetchData}
+      />
+
+      <AiStudyPlanModal
+        isOpen={isAiPlanModalOpen}
+        onClose={() => setIsAiPlanModalOpen(false)}
+        onPlanCreated={fetchData}
       />
     </div>
   );
