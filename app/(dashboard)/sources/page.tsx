@@ -43,6 +43,15 @@ export default function SourcesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
+  // Per-file upload progress tracking
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+    currentFileName: string;
+    completedFiles: string[];
+    failedFiles: { name: string; error: string }[];
+  } | null>(null);
+
   const fetchSources = async () => {
     try {
       const res = await fetch("/api/sources");
@@ -88,33 +97,79 @@ export default function SourcesPage() {
     setIsSubmitting(true);
     setStatusFeedback(null);
 
-    const formData = new FormData();
-    filesToUpload.forEach(f => {
-      formData.append("files", f);
-    });
-    formData.append("subject", fileSubject || "General");
-    formData.append("topic", fileTopic || "");
+    const completed: string[] = [];
+    const failed: { name: string; error: string }[] = [];
 
-    try {
-      const res = await fetch("/api/sources/upload", {
-        method: "POST",
-        body: formData,
+    setUploadProgress({
+      current: 0,
+      total: filesToUpload.length,
+      currentFileName: filesToUpload[0].name,
+      completedFiles: [],
+      failedFiles: [],
+    });
+
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      setUploadProgress({
+        current: i + 1,
+        total: filesToUpload.length,
+        currentFileName: file.name,
+        completedFiles: [...completed],
+        failedFiles: [...failed],
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to process and upload documents.");
-      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("subject", fileSubject || "General");
+      formData.append("topic", fileTopic || "");
 
+      try {
+        const res = await fetch("/api/sources/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        let data: any = {};
+        try {
+          const text = await res.text();
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          if (!res.ok) throw new Error(`HTTP ${res.status}: Upload failed (Payload limit or timeout).`);
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to process ${file.name}`);
+        }
+
+        completed.push(file.name);
+      } catch (err: any) {
+        console.error("Upload error for file:", file.name, err);
+        failed.push({ name: file.name, error: err.message || "Failed to upload" });
+      }
+    }
+
+    setIsSubmitting(false);
+    await fetchSources();
+
+    if (failed.length === 0) {
       setIsUploadModalOpen(false);
       setFilesToUpload([]);
       setFileSubject("");
       setFileTopic("");
-      fetchSources();
-    } catch (err: any) {
-      setStatusFeedback(err.message);
-    } finally {
-      setIsSubmitting(false);
+      setUploadProgress(null);
+    } else {
+      setUploadProgress({
+        current: filesToUpload.length,
+        total: filesToUpload.length,
+        currentFileName: "",
+        completedFiles: completed,
+        failedFiles: failed,
+      });
+      setStatusFeedback(
+        `Uploaded ${completed.length} of ${filesToUpload.length} documents. ${failed.length} failed (${failed.map(f => `${f.name}: ${f.error}`).join(", ")})`
+      );
+      // Keep only failed files in the list for retry
+      setFilesToUpload(prev => prev.filter(f => failed.some(fail => fail.name === f.name)));
     }
   };
 
@@ -350,6 +405,30 @@ export default function SourcesPage() {
             />
           </div>
 
+          {/* Live Progress Bar during Batch Ingestion */}
+          {isSubmitting && uploadProgress && (
+            <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-blue-900 dark:text-blue-200">
+                <span className="flex items-center space-x-1.5">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                  <span>
+                    Uploading Document {uploadProgress.current} of {uploadProgress.total}
+                  </span>
+                </span>
+                <span>{Math.round((uploadProgress.current / uploadProgress.total) * 100)}%</span>
+              </div>
+              <div className="w-full bg-blue-100 dark:bg-blue-900/40 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-blue-600 dark:text-blue-300 truncate">
+                Processing: <strong>{uploadProgress.currentFileName}</strong> (Extracting text & RAG chunks)
+              </p>
+            </div>
+          )}
+
           {/* Selected Files List */}
           {filesToUpload.length > 0 && (
             <div className="space-y-2">
@@ -358,23 +437,37 @@ export default function SourcesPage() {
                   <Files className="h-3.5 w-3.5 text-blue-600" />
                   <span>Selected Documents ({filesToUpload.length})</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setFilesToUpload([])}
-                  className="text-red-600 hover:underline text-[11px]"
-                >
-                  Clear all
-                </button>
+                {!isSubmitting && (
+                  <button
+                    type="button"
+                    onClick={() => setFilesToUpload([])}
+                    className="text-red-600 hover:underline text-[11px]"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
 
-              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {filesToUpload.map((f, idx) => {
                   const sizeMB = (f.size / (1024 * 1024)).toFixed(2);
                   const ext = f.name.split(".").pop()?.toUpperCase();
+                  const isDone = uploadProgress?.completedFiles.includes(f.name);
+                  const isCurrent = isSubmitting && uploadProgress?.currentFileName === f.name;
+                  const isFailed = uploadProgress?.failedFiles.some(fail => fail.name === f.name);
+
                   return (
                     <div
                       key={`${f.name}-${idx}`}
-                      className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2"
+                      className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                        isDone
+                          ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40"
+                          : isCurrent
+                          ? "bg-blue-50/50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800 ring-1 ring-blue-500/20"
+                          : isFailed
+                          ? "bg-red-50/40 dark:bg-red-950/20 border-red-200 dark:border-red-900/40"
+                          : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+                      }`}
                     >
                       <div className="flex items-center space-x-2 min-w-0">
                         <Badge variant="secondary" className="text-[10px] font-mono shrink-0">
@@ -385,16 +478,36 @@ export default function SourcesPage() {
                         </span>
                         <span className="text-[10px] text-gray-400 shrink-0">({sizeMB} MB)</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveFile(idx);
-                        }}
-                        className="text-gray-400 hover:text-red-600 p-1 shrink-0"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+
+                      <div className="flex items-center space-x-2 shrink-0">
+                        {isDone && (
+                          <span className="text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center">
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Ready
+                          </span>
+                        )}
+                        {isCurrent && (
+                          <span className="text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center">
+                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Ingesting...
+                          </span>
+                        )}
+                        {isFailed && (
+                          <span className="text-red-500 text-[11px] font-semibold">
+                            Failed
+                          </span>
+                        )}
+                        {!isSubmitting && !isDone && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFile(idx);
+                            }}
+                            className="text-gray-400 hover:text-red-600 p-1 shrink-0"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
