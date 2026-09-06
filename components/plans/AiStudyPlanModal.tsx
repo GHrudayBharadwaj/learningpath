@@ -38,11 +38,48 @@ export function AiStudyPlanModal({
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [aiProvider, setAiProvider] = useState<AIProvider>("offline");
   const [apiKey, setApiKey] = useState("");
+  const [replacePreviousPlans, setReplacePreviousPlans] = useState(false);
+  const [existingPlans, setExistingPlans] = useState<any[]>([]);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingPrevious, setIsDeletingPrevious] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [generatedResult, setGeneratedResult] = useState<any | null>(null);
+
+  // Fetch existing plans when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      fetch("/api/plans")
+        .then(res => res.json())
+        .then(data => {
+          setExistingPlans(data.plans || []);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
+
+  const handleDeleteAllPreviousPlans = async () => {
+    if (!confirm(`Are you sure you want to delete all ${existingPlans.length} previous study plans and their tasks?`)) {
+      return;
+    }
+
+    setIsDeletingPrevious(true);
+    setError(null);
+    try {
+      for (const p of existingPlans) {
+        await fetch(`/api/plans/${p.id}`, { method: "DELETE" });
+      }
+      setExistingPlans([]);
+      setSuccessMsg("Successfully deleted all previous study plans.");
+      onPlanCreated();
+    } catch (err: any) {
+      setError(err.message || "Failed to delete previous plans");
+    } finally {
+      setIsDeletingPrevious(false);
+    }
+  };
 
   const presets = [
     {
@@ -91,6 +128,7 @@ export function AiStudyPlanModal({
   const handleGenerate = async () => {
     setIsGenerating(true);
     setError(null);
+    setSuccessMsg(null);
 
     try {
       const res = await fetch("/api/plans/generate-ai", {
@@ -129,6 +167,13 @@ export function AiStudyPlanModal({
     setError(null);
 
     try {
+      // If user chose to replace/delete previous plans
+      if (replacePreviousPlans && existingPlans.length > 0) {
+        for (const p of existingPlans) {
+          await fetch(`/api/plans/${p.id}`, { method: "DELETE" });
+        }
+      }
+
       // 1. Create Study Plan
       const planRes = await fetch("/api/plans", {
         method: "POST",
@@ -179,6 +224,45 @@ export function AiStudyPlanModal({
         {error && (
           <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 rounded-xl">
             {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-xl flex items-center space-x-2">
+            <Check className="h-4 w-4 shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Existing Plans Quick Cleanup Banner */}
+        {existingPlans.length > 0 && (
+          <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <Layers className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-gray-700 dark:text-gray-300 text-xs">
+                You have <strong>{existingPlans.length} active study plan(s)</strong> in your dashboard.
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteAllPreviousPlans}
+              disabled={isDeletingPrevious}
+              className="h-7 px-2.5 text-[11px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/40 shrink-0 font-semibold"
+            >
+              {isDeletingPrevious ? (
+                <>
+                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-3 w-3 mr-1 text-red-600" />
+                  <span>Delete Previous Study Plans</span>
+                </>
+              )}
+            </Button>
           </div>
         )}
 
@@ -315,6 +399,21 @@ export function AiStudyPlanModal({
             />
           )}
         </div>
+
+        {/* Clean Slate / Replace Toggle Option */}
+        {existingPlans.length > 0 && (
+          <label className="flex items-center space-x-2 p-2.5 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/30 cursor-pointer hover:bg-gray-100/50 transition-colors">
+            <input
+              type="checkbox"
+              checked={replacePreviousPlans}
+              onChange={(e) => setReplacePreviousPlans(e.target.checked)}
+              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+            />
+            <span className="text-xs text-gray-700 dark:text-gray-300">
+              <strong>Replace all previous study plans</strong> with this new plan (deletes prior {existingPlans.length} plans upon accept)
+            </span>
+          </label>
+        )}
 
         {/* Generate Button */}
         <Button
