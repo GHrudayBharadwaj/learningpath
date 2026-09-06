@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
+import { FormattedContent } from "@/components/ui/FormattedContent";
 
 export function NoteViewer({
   note,
@@ -270,7 +271,7 @@ export function NoteViewer({
       <div className="p-6 sm:p-8">
         {isEditing ? (
           <div className="space-y-3">
-            <label className="text-xs font-semibold text-gray-500 block">Markdown Content Editor</label>
+            <label className="text-xs font-semibold text-gray-500 block">Note Content Editor</label>
             <Textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -278,11 +279,9 @@ export function NoteViewer({
             />
           </div>
         ) : (
-          <article className="prose prose-blue dark:prose-invert max-w-none text-xs leading-relaxed space-y-4">
-            <div className="whitespace-pre-wrap font-sans text-gray-800 dark:text-gray-200">
-              {activeContent}
-            </div>
-          </article>
+          <div className="max-w-none text-xs leading-relaxed">
+            <FormattedContent content={activeContent} />
+          </div>
         )}
       </div>
     </div>

@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { AVAILABLE_MODELS, AIProvider } from "@/lib/ai/client";
+import { FormattedContent } from "@/components/ui/FormattedContent";
 
 interface ChatMessage {
   id: string;
@@ -494,9 +495,15 @@ export function MultiModelAiModal({
                     />
                   )}
 
-                  <div className="prose dark:prose-invert prose-xs max-w-none whitespace-pre-wrap font-sans space-y-2">
-                    {m.content}
-                  </div>
+                  {isUser ? (
+                    <div className="whitespace-pre-wrap font-sans text-white text-xs leading-relaxed">
+                      {m.content}
+                    </div>
+                  ) : (
+                    <div className="max-w-none text-xs leading-relaxed">
+                      <FormattedContent content={m.content} />
+                    </div>
+                  )}
 
                   {/* Sources Used Badge */}
                   {m.sourcesUsed && m.sourcesUsed.length > 0 && (
