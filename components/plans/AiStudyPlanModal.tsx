@@ -18,6 +18,7 @@ import {
   Code2,
   Brain,
   GraduationCap,
+  Trash2,
 } from "lucide-react";
 import { AIProvider, AVAILABLE_MODELS } from "@/lib/ai/client";
 
